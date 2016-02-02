@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+
+class BrainfuckException(Exception):
+    def __init__(self, message, line, byte):
+        super().__init__(self, message)
+        self.message = message
+        self.line = line
+        self.byte = byte
+class BrainfuckSyntaxException(BrainfuckException):
+    pass
+class BrainfuckRuntimeException(BrainfuckException):
+    pass
+
+class BrainfuckInterpreter(object):
+    def __init__(self, code, inputf, options):
+        self.code = code
+        self.inputf = inputf
+        self.options = options
+        self.pptr = 0
+        self.mptr = 0
+        self.mem    = []
+        self.negmem = []
+        self.make_jump_table()
+
+    def runtime_exception(self, msg):
+        l, b = 1, self.pptr+1
+        for line in self.code.splitlines(keepends=True):
+            if b - len(line) < 0:
+                break
+            b -= len(line)
+            l += 1
+        return BrainfuckRuntimeException(msg, l, b)
+
+    def make_jump_table(self):
+        self.jump = {}
+        stk = []
+        for i in range(len(self.code)):
+            if self.code[i] == '[':
+                stk.append(i)
+            elif self.code[i] == ']':
+                if len(stk) == 0:
+                    raise BrainfuckSyntaxException('''unmatched `]' found''')
+                self.jump[i] = stk[-1]
+                self.jump[stk[-1]] = i
+                stk.pop()
+        if len(stk) != 0:
+            raise BrainfuckSyntaxException('''unmatched `[' found''')
+
+    def is_terminated(self):
+        return len(self.code) == self.pptr
+
+    def move(self, n):
+        l = self.options.memory_size
+        if n < 0:
+            f = self.options.move_negative_index
+            if f == 'die':
+                raise self.runtime_exception('''negative index appeared''')
+            elif f == 'loop':
+                n = l-1
+            elif f == 'stuck':
+                return
+        if l <= n:
+            f = self.options.move_out_of_range
+            if f == 'die':
+                raise self.runtime_exception('''too large index appeared''')
+            elif f == 'loop':
+                n = 0
+            elif f == 'stuck':
+                return
+        self.mptr = n
+
+    def extend(self):
+        if 0 <= self.mptr:
+            a = self.mem
+            i = self.mptr
+        else:
+            a = self.negmem
+            i = -self.mptr-1
+        if len(a) <= i:
+            a += [0] * (i - len(a) + 1)
+
+    def get(self):
+        self.extend()
+        if 0 <= self.mptr:
+            if self.options.memory_size <= self.mptr:
+                f = self.options.use_negative_index
+                if f == 'die':
+                    raise self.runtime_exception('''too large index read''')
+            return self.mem[self.mptr]
+        else:
+            f = self.options.use_negative_index
+            if f == 'die':
+                raise self.runtime_exception('''negative index read''')
+            return self.negmem[-self.mptr-1]
+
+    def put(self, n):
+        self.extend()
+        if n >= self.options.cell_size:
+            f = self.options.arithmetic_overflow
+            if f == 'die':
+                raise self.runtime_exception('arithmetic overflow happend')
+            elif f == 'loop':
+                n = 0
+            elif f == 'same':
+                pass # not return
+        elif n < 0:
+            f = self.options.arithmetic_underflow
+            if f == 'die':
+                raise self.runtime_exception('arithmetic underflow happend')
+            elif f == 'loop':
+                n = self.options.cell_size-1
+            elif f == 'same':
+                pass # not return
+
+        if 0 <= self.mptr:
+            if self.options.memory_size <= self.mptr:
+                f = self.options.use_negative_index
+                if f == 'die':
+                    raise self.runtime_exception('''too large index written''')
+            self.mem[self.mptr] = n
+        else:
+            f = self.options.use_negative_index
+            if f == 'die':
+                raise self.runtime_exception('''negative index written''')
+            self.negmem[-self.mptr-1] = n
+
+    def input(self):
+        c = self.inputf.buffer.read(1)
+        if len(c) == 0:
+            f = self.options.read_eof
+            if f == 'die':
+                raise self.runtime_exception('''end of file''')
+            elif f == 'same':
+                c = self.get()
+            elif f == 'eof':
+                c = -1
+            elif f == 'zero':
+                c = 0
+            else:
+                c = f
+        else:
+            c = c[0]
+        assert isinstance(c, int)
+        return c
+
+    def step(self):
+        if len(self.code) <= self.pptr:
+            raise ValueError('''program have been terminated''')
+        c = self.code[self.pptr]
+        output = []
+        if   c == '<': self.move(self.mptr-1)
+        elif c == '>': self.move(self.mptr+1)
+        elif c == '+': self.put(self.get() + 1)
+        elif c == '-': self.put(self.get() - 1)
+        elif c == ',': self.put(self.input())
+        elif c == '.': output.append(self.get())
+        elif c == '[' and self.get() == 0: self.pptr = self.jump[self.pptr]
+        elif c == ']' and self.get() != 0: self.pptr = self.jump[self.pptr]
+        self.pptr += 1
+        return output
+
+import os
+import sys
+import argparse
+
+progname = os.path.basename(__file__)
+parser = argparse.ArgumentParser(description='the brainfuck interpreter for debug')
+parser.add_argument('file')
+parser.add_argument('-i', '--input', default='-')
+parser.add_argument('-s', '--read-eof', '--store', default='die')
+parser.add_argument('-L', '--cell-size',   type=int, default=256)
+parser.add_argument('-l', '--memory-size', type=int, default=30000)
+parser.add_argument('-o', '--arithmetic-overflow',  default='die', choices=['die', 'loop', 'same'])
+parser.add_argument('-u', '--arithmetic-underflow', default='die', choices=['die', 'loop', 'same'])
+parser.add_argument('-n', '--move-negative-index',  default='die', choices=['die', 'loop', 'stuck', 'ok'])
+parser.add_argument('-e', '--move-out-of-range',    default='die', choices=['die', 'loop', 'stuck', 'ok'])
+parser.add_argument('-N', '--use-negative-index', default='die', choices=['die', 'ok'])
+parser.add_argument('-E', '--use-out-of-range',   default='die', choices=['die', 'ok'])
+args = parser.parse_args()
+try:
+    args.read_eof = int(args.read_eof)
+except ValueError:
+    if args.read_eof not in ['die', 'same', 'eof', 'zero']:
+        parser.error('''argument -s/--read-eof/--store: invalid choice: '{}' (choose from 'die', 'same', 'eof', 'zero' or integer)'''.format(args.read_eof))
+with open(args.file) as fh:
+    code = fh.read()
+if args.input == '-':
+    inputf = sys.stdin
+else:
+    inputf = open(args.input)
+
+try:
+    p = BrainfuckInterpreter(code, inputf, args)
+except BrainfuckException as e:
+    print('{}: {}'.format(progname, e))
+    sys.exit(1)
+try:
+    while not p.is_terminated():
+        output = p.step()
+        if len(output):
+            print(''.join(map(chr, output)), end='')
+except BrainfuckException as e:
+    print('{}: {}, at L{} B{}'.format(progname, e.message, e.line, e.byte))
+    sys.exit(1)
