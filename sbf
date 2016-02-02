@@ -98,7 +98,7 @@ class BrainfuckInterpreter(object):
         if n >= self.options.cell_size:
             f = self.options.arithmetic_overflow
             if f == 'die':
-                raise self.runtime_exception('arithmetic overflow happend')
+                raise self.runtime_exception('arithmetic overflow happend (NOTE: if you use overflow, you should take care the size of one cell)')
             elif f == 'loop':
                 n = 0
             elif f == 'same':
