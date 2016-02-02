@@ -192,7 +192,7 @@ else:
 try:
     p = BrainfuckInterpreter(code, inputf, args)
 except BrainfuckException as e:
-    print('{}: {}'.format(progname, e))
+    print('{}: {}'.format(progname, e), file=sys.stderr)
     sys.exit(1)
 try:
     while not p.is_terminated():
@@ -200,5 +200,5 @@ try:
         if len(output):
             print(''.join(map(chr, output)), end='')
 except BrainfuckException as e:
-    print('{}: {}, at L{} B{}'.format(progname, e.message, e.line, e.byte))
+    print('{}: {}, at L{} B{}'.format(progname, e.message, e.line, e.byte), file=sys.stderr)
     sys.exit(1)
