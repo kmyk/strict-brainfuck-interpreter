@@ -83,7 +83,7 @@ class BrainfuckInterpreter(object):
         self.extend()
         if 0 <= self.mptr:
             if self.options.memory_size <= self.mptr:
-                f = self.options.use_negative_index
+                f = self.options.use_out_of_range
                 if f == 'die':
                     raise self.runtime_exception('''too large index read''')
             return self.mem[self.mptr]
@@ -114,7 +114,7 @@ class BrainfuckInterpreter(object):
 
         if 0 <= self.mptr:
             if self.options.memory_size <= self.mptr:
-                f = self.options.use_negative_index
+                f = self.options.use_out_of_range
                 if f == 'die':
                     raise self.runtime_exception('''too large index written''')
             self.mem[self.mptr] = n
